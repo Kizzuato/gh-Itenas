@@ -146,8 +146,14 @@ app.get(
   "/api/greenhouses/history/latest",
   asyncHandler(async (req, res) => {
     const greenhouse_id = req.query.gh;
+
+    // Validate greenhouse_id similarly to /api/greenhouses/history
+    if (!isNumber(greenhouse_id)) {
+      return res.status(400).json({ error: "Invalid greenhouse ID" });
+    }
+
     const sql = `SELECT * FROM historical_data WHERE greenhouse_id = ? ORDER BY created_at DESC LIMIT 1`;
-    db.query(sql, [greenhouse_id], (err, rows) => {
+    db.query(sql, [Number(greenhouse_id)], (err, rows) => {
       if (err) return res.status(500).json({ error: err.message });
       res.json(rows.length > 0 ? rows[0] : null);
     });
