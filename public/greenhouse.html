@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Detail</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/dayjs@1/dayjs.min.js"></script>
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+</head>
+<body class="bg-gray-50 text-gray-800 min-h-screen font-sans">
+
+    <header class="bg-white border-b border-gray-200 sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 h-16 flex items-center">
+            <div class="w-8 h-8 bg-green-100 text-green-600 rounded flex items-center justify-center mr-3">
+                <i class="ph-fill ph-plant text-xl"></i>
+            </div>
+            <h1 class="text-xl font-bold text-gray-900">Hydroponic Dashboard</h1>
+        </div>
+    </header>
+
+    <main class="p-6 max-w-7xl mx-auto w-full">
+        <a href="/" class="inline-flex items-center text-gray-500 hover:text-green-600 mb-6 font-medium">
+            <i class="ph ph-arrow-left mr-2"></i> Back to All Greenhouses
+        </a>
+
+        <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-8">
+            <div class="flex flex-col sm:flex-row flex-wrap items-start sm:items-center gap-3 w-full lg:w-auto text-sm">
+                <h2 class="text-3xl font-bold text-gray-900" id="detail-title">Greenhouse Details</h2>
+                
+                <div class="flex items-center gap-2 bg-white px-3 py-2 rounded-lg border border-gray-200 shadow-sm w-full sm:w-auto justify-center sm:justify-start">
+                    <div id="detail-status-dot" class="w-2.5 h-2.5 rounded-full bg-gray-300"></div>
+                    <span id="detail-status-text" class="text-gray-500 font-medium">Connecting...</span>
+                </div>
+            </div>
+                
+            <div class="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                <select id="range-select" class="w-full sm:w-auto border border-gray-300 rounded-lg px-3 py-2 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-green-500">
+                    <option value="realtime">Realtime</option> 
+                    <option value="daily">Last 24 hours</option>
+                    <option value="weekly">Last 7 days</option>
+                    <option value="monthly">Last 30 days</option>
+                    <option value="">Custom</option>
+                </select>
+
+                <div class="flex items-center gap-2 w-full sm:w-auto bg-white border border-gray-300 rounded-lg px-2 py-1">
+                    <label class="text-gray-500 text-xs uppercase font-bold">From</label>
+                    <input type="date" id="date-from" class="outline-none text-gray-700 bg-transparent text-sm" />
+                    <div class="w-px h-4 bg-gray-300 mx-1"></div>
+                    <label class="text-gray-500 text-xs uppercase font-bold">To</label>
+                    <input type="date" id="date-to" class="outline-none text-gray-700 bg-transparent text-sm" />
+                </div>
+            </div>
+        </div>
+
+        <div id="detail-content" class="hidden">
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 relative overflow-hidden group">
+                    <div class="flex justify-between items-center mb-2">
+                        <span class="text-gray-500 text-sm uppercase font-medium">Air Temp</span>
+                        <i class="ph ph-thermometer text-gray-300 text-xl group-hover:text-green-500 transition-colors"></i>
+                    </div>
+                    <div class="text-3xl font-bold mt-2 flex items-baseline gap-1">
+                        <span id="val-air">--</span><span class="text-lg text-gray-400">°C</span>
+                    </div>
+                    <div id="detail-last-air" class="text-xs text-gray-400 mt-2 h-4 font-medium"></div>
+                </div>
+                <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 relative overflow-hidden group">
+                    <div class="flex justify-between items-center mb-2">
+                        <span class="text-gray-500 text-sm uppercase font-medium">Humidity</span>
+                        <i class="ph ph-drop text-gray-300 text-xl group-hover:text-blue-500 transition-colors"></i>
+                    </div>
+                    <div class="text-3xl font-bold mt-2 flex items-baseline gap-1">
+                        <span id="val-humidity">--</span><span class="text-lg text-gray-400">%</span>
+                    </div>
+                    <div id="detail-last-hum" class="text-xs text-gray-400 mt-2 h-4 font-medium"></div>
+                </div>
+                <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 relative overflow-hidden group">
+                    <div class="flex justify-between items-center mb-2">
+                        <span class="text-gray-500 text-sm uppercase font-medium">Water Temp</span>
+                        <i class="ph ph-thermometer-simple text-gray-300 text-xl group-hover:text-cyan-500 transition-colors"></i>
+                    </div>
+                    <div class="text-3xl font-bold mt-2 flex items-baseline gap-1">
+                        <span id="val-water">--</span><span class="text-lg text-gray-400">°C</span>
+                    </div>
+                    <div id="detail-last-water" class="text-xs text-gray-400 mt-2 h-4 font-medium"></div>
+                </div>
+                <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 relative overflow-hidden group">
+                    <div class="flex justify-between items-center mb-2">
+                        <span class="text-gray-500 text-sm uppercase font-medium">Turbidity</span>
+                        <i class="ph ph-wave-sine text-gray-300 text-xl group-hover:text-indigo-500 transition-colors"></i>
+                    </div>
+                    <div class="text-3xl font-bold mt-2 flex items-baseline gap-1">
+                        <span id="val-turbidity">--</span><span class="text-lg text-gray-400">NTU</span>
+                    </div>
+                    <div id="detail-last-turb" class="text-xs text-gray-400 mt-2 h-4 font-medium"></div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 h-80">
+                    <h4 class="font-bold text-gray-700 mb-4">Air Temperature Trend</h4>
+                    <canvas id="airTempChart"></canvas>
+                </div>
+                <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 h-80">
+                    <h4 class="font-bold text-gray-700 mb-4">Humidity Trend</h4>
+                    <canvas id="humidityChart"></canvas>
+                </div>
+            </div>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+                <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 h-80">
+                    <h4 class="font-bold text-gray-700 mb-4">Water Temperature Trend</h4>
+                    <canvas id="waterTempChart"></canvas>
+                </div>
+                <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 h-80">
+                    <h4 class="font-bold text-gray-700 mb-4">Turbidity Trend</h4>
+                    <canvas id="turbidityChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <div id="detail-empty" class="hidden text-center py-20">
+            <i class="ph ph-database text-4xl text-gray-300 mb-2"></i>
+            <p class="text-gray-500">No data available for this greenhouse.</p>
+        </div>
+    </main>
+
+    <script src="/js/script.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const rangeSelect = document.getElementById('range-select');
+            const dateFromInput = document.getElementById('date-from');
+            const dateToInput = document.getElementById('date-to');
+            
+            const triggerUpdate = () => {
+                if (window.detailPage && window.detailPage.loadHistory) {
+                    window.detailPage.loadHistory(); 
+                }
+            };
+
+            rangeSelect.addEventListener('change', function () {
+                const val = this.value;
+                const now = dayjs();
+                const dateFormat = 'YYYY-MM-DD';
+
+                if (val) {
+                    dateToInput.value = now.format(dateFormat);
+                    
+                    let fromDate;
+                    if (val === 'daily') {
+                        fromDate = now.subtract(1, 'day');
+                    } else if (val === 'weekly') {
+                        fromDate = now.subtract(7, 'day');
+                    } else if (val === 'monthly') {
+                        fromDate = now.subtract(30, 'day');
+                    }
+                    
+                    if(fromDate) {
+                        dateFromInput.value = fromDate.format(dateFormat);
+                    }
+                    
+                    triggerUpdate();
+                }
+            });
+
+            const handleManualDateChange = () => {
+                rangeSelect.value = "";
+                triggerUpdate();
+            };
+
+            dateFromInput.addEventListener('change', handleManualDateChange);
+            dateToInput.addEventListener('change', handleManualDateChange);
+
+            if (!dateToInput.value) {
+                rangeSelect.value = 'weekly';
+                rangeSelect.dispatchEvent(new Event('change'));
+            }
+        });
+    </script>
+</body>
+</html>
