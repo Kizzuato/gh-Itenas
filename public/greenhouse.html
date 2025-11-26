@@ -28,30 +28,30 @@
         </a>
 
         <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-8">
-            <h2 class="text-3xl font-bold text-gray-900" id="detail-title">Greenhouse Details</h2>
-            
             <div class="flex flex-col sm:flex-row flex-wrap items-start sm:items-center gap-3 w-full lg:w-auto text-sm">
+                <h2 class="text-3xl font-bold text-gray-900" id="detail-title">Greenhouse Details</h2>
                 
                 <div class="flex items-center gap-2 bg-white px-3 py-2 rounded-lg border border-gray-200 shadow-sm w-full sm:w-auto justify-center sm:justify-start">
                     <div id="detail-status-dot" class="w-2.5 h-2.5 rounded-full bg-gray-300"></div>
                     <span id="detail-status-text" class="text-gray-500 font-medium">Connecting...</span>
                 </div>
+            </div>
+                
+            <div class="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                <select id="range-select" class="w-full sm:w-auto border border-gray-300 rounded-lg px-3 py-2 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-green-500">
+                    <option value="realtime">Realtime</option> 
+                    <option value="daily">Last 24 hours</option>
+                    <option value="weekly">Last 7 days</option>
+                    <option value="monthly">Last 30 days</option>
+                    <option value="">Custom</option>
+                </select>
 
-                <div class="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-                    <select id="range-select" class="w-full sm:w-auto border border-gray-300 rounded-lg px-3 py-2 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-green-500">
-                        <option value="">Custom</option>
-                        <option value="daily">Last 24 hours</option>
-                        <option value="weekly">Last 7 days</option>
-                        <option value="monthly">Last 30 days</option>
-                    </select>
-
-                    <div class="flex items-center gap-2 w-full sm:w-auto bg-white border border-gray-300 rounded-lg px-2 py-1">
-                        <label class="text-gray-500 text-xs uppercase font-bold">From</label>
-                        <input type="date" id="date-from" class="outline-none text-gray-700 bg-transparent text-sm" />
-                        <div class="w-px h-4 bg-gray-300 mx-1"></div>
-                        <label class="text-gray-500 text-xs uppercase font-bold">To</label>
-                        <input type="date" id="date-to" class="outline-none text-gray-700 bg-transparent text-sm" />
-                    </div>
+                <div class="flex items-center gap-2 w-full sm:w-auto bg-white border border-gray-300 rounded-lg px-2 py-1">
+                    <label class="text-gray-500 text-xs uppercase font-bold">From</label>
+                    <input type="date" id="date-from" class="outline-none text-gray-700 bg-transparent text-sm" />
+                    <div class="w-px h-4 bg-gray-300 mx-1"></div>
+                    <label class="text-gray-500 text-xs uppercase font-bold">To</label>
+                    <input type="date" id="date-to" class="outline-none text-gray-700 bg-transparent text-sm" />
                 </div>
             </div>
         </div>

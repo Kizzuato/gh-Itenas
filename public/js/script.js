@@ -1,11 +1,6 @@
 // --- Configuration ---
 const API_BASE = window.location.origin;
-const MQTT_CONFIG = {
-    host: 'wss://xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.xx.xx.hivemq.cloud:8884/mqtt', 
-    options: {
-        username: 'USERNAME',
-        password: 'PASSWORD'
-    },
+let MQTT_CONFIG = {
     topic_pattern: 'greenhouses/+/heartbeat',
     timeout_ms: 5000
 };
@@ -30,39 +25,55 @@ const mqttService = {
     lastSeen: {},
     checkInterval: null,
 
-    connect: () => {
-        console.log("Connecting to MQTT...");
-        mqttService.client = mqtt.connect(MQTT_CONFIG.host, MQTT_CONFIG.options);
+    connect: async () => {
+        if (mqttService.client) return;
 
-        mqttService.client.on('connect', () => {
-            console.log("✅ MQTT Connected");
-            mqttService.client.subscribe(MQTT_CONFIG.topic_pattern);
-        });
-
-        mqttService.client.on('message', (topic, message) => {
-            const parts = topic.split('/');
-            const ghId = parts[1];
-
-            mqttService.lastSeen[ghId] = Date.now();
-            mqttService.updateStatusUI(ghId, true);
+        try {
+            const res = await fetch(`${API_BASE}/api/config`);
+            const config = await res.json();
             
-            detailPage.updateStatusUIFromMqtt(ghId, true);
+            const host = `wss://${config.mqtt.host}:${config.mqtt.port}/mqtt`;
+            const options = {
+                username: config.mqtt.username,
+                password: config.mqtt.password,
+            };
 
-            try {
-                const payload = JSON.parse(message.toString());
+            console.log("Connecting to MQTT...");
+            mqttService.client = mqtt.connect(host, options);
+
+            mqttService.client.on('connect', () => {
+                console.log("✅ MQTT Connected");
+                mqttService.client.subscribe(MQTT_CONFIG.topic_pattern);
+            });
+
+            mqttService.client.on('message', (topic, message) => {
+                const parts = topic.split('/');
+                const ghId = parts[1];
+    
+                mqttService.lastSeen[ghId] = Date.now();
+                mqttService.updateStatusUI(ghId, true);
                 
-                mqttService.updateHomeCardRealtime(ghId, payload);
+                detailPage.updateStatusUIFromMqtt(ghId, true);
+    
+                try {
+                    const payload = JSON.parse(message.toString());
+                    
+                    mqttService.updateHomeCardRealtime(ghId, payload);
+    
+                    sendRealtimeToServer(ghId, payload, payload.created_at || new Date().toISOString());
+    
+                    detailPage.handleRealtimeUpdate(ghId, payload);
+                } catch (e) {
+                    console.warn('MQTT payload error:', e);
+                }
+            });
+    
+            if (mqttService.checkInterval) clearInterval(mqttService.checkInterval);
+            mqttService.checkInterval = setInterval(mqttService.watchdog, 1000);
 
-                sendRealtimeToServer(ghId, payload, payload.created_at || new Date().toISOString());
-
-                detailPage.handleRealtimeUpdate(ghId, payload);
-            } catch (e) {
-                console.warn('MQTT payload error:', e);
-            }
-        });
-
-        if (mqttService.checkInterval) clearInterval(mqttService.checkInterval);
-        mqttService.checkInterval = setInterval(mqttService.watchdog, 1000);
+        } catch (e) {
+            console.error("Failed to init MQTT:", e);
+        }
     },
 
     updateHomeCardRealtime: (ghId, payload) => {
@@ -226,6 +237,12 @@ const api = {
             const res = await fetch(`${API_BASE}/api/greenhouses/history?${params.toString()}`);
             return res.ok ? await res.json() : [];
         } catch { return []; }
+    },
+    async fetchRealtimeSnapshot(id) {
+        try {
+            const res = await fetch(`${API_BASE}/api/realtime/${id}`);
+            return res.ok ? await res.json() : [];
+        } catch { return []; }
     }
 };
 
@@ -270,9 +287,14 @@ const homePage = {
 };
 
 // --- Detail Page ---
+// --- Detail Page ---
 const detailPage = {
     chart: null, humidityChart: null, waterChart: null, turbidityChart: null,
     currentId: null,
+
+    isRealtimeMode: false,
+    realtimeBuffer: [],
+    lastChartUpdate: 0,
 
     init: async () => {
         const params = new URLSearchParams(window.location.search);
@@ -288,53 +310,123 @@ const detailPage = {
         const dateFromInput = document.getElementById('date-from');
         const dateToInput = document.getElementById('date-to');
 
-        // 1. Dropdown Changes -> Update Dates -> Load History
         if (rangeSelect) {
             rangeSelect.addEventListener('change', function() {
                 const val = this.value;
-                if (!val) return; // Custom
-
-                const now = dayjs();
-                const dateFormat = 'YYYY-MM-DD';
                 
-                // Always set To = Today
-                if(dateToInput) dateToInput.value = now.format(dateFormat);
+                if (val === 'realtime') {
+                    detailPage.isRealtimeMode = true;
+                    if(dateFromInput) dateFromInput.value = '';
+                    if(dateToInput) dateToInput.value = '';
+                    detailPage.loadRealtimeData(); 
+                } else {
+                    detailPage.isRealtimeMode = false;
+                    if (!val) return;
+                    
+                    const now = dayjs();
+                    const dateFormat = 'YYYY-MM-DD';
+                    if(dateToInput) dateToInput.value = now.format(dateFormat);
 
-                let fromDate;
-                if (val === 'daily') fromDate = now.subtract(1, 'day');
-                else if (val === 'weekly') fromDate = now.subtract(7, 'day');
-                else if (val === 'monthly') fromDate = now.subtract(30, 'day');
+                    let fromDate;
+                    if (val === 'daily') fromDate = now.subtract(1, 'day');
+                    else if (val === 'weekly') fromDate = now.subtract(7, 'day');
+                    else if (val === 'monthly') fromDate = now.subtract(30, 'day');
 
-                if (fromDate && dateFromInput) {
-                    dateFromInput.value = fromDate.format(dateFormat);
+                    if (fromDate && dateFromInput) {
+                        dateFromInput.value = fromDate.format(dateFormat);
+                    }
+                    detailPage.loadHistory();
                 }
-                
-                // Fetch data using the newly set input values
-                detailPage.loadHistory();
             });
         }
 
-        // 2. Input Changes -> Reset Dropdown -> Load History
         const handleManualChange = () => {
-            if (rangeSelect) rangeSelect.value = ""; // Set to Custom
+            if (rangeSelect) rangeSelect.value = ""; 
+            detailPage.isRealtimeMode = false;
             detailPage.loadHistory();
         };
 
         if(dateFromInput) dateFromInput.addEventListener('change', handleManualChange);
         if(dateToInput) dateToInput.addEventListener('change', handleManualChange);
 
-        // --- Set Default to Weekly on Load ---
+        // --- Set Default to Realtime on Load ---
         if (rangeSelect) {
-            rangeSelect.value = 'weekly';
-            // Manually trigger the change event we defined above
+            rangeSelect.value = 'realtime';
             rangeSelect.dispatchEvent(new Event('change'));
-        } else {
-            // Fallback if no dropdown
-            await detailPage.loadHistory();
         }
-        
+
         const latest = await api.fetchLatestHistory(detailPage.currentId);
         if(latest) detailPage.updateDetailValues(latest);
+    },
+
+    loadRealtimeData: async () => {
+        const id = detailPage.currentId;
+        // 1. Fetch data from DB
+        const data = await api.fetchRealtimeSnapshot(id);
+
+        console.log("Realtime Snapshot from Server:", data);
+        
+        if (data && data.length > 0) {
+            // 2. Sort Oldest -> Newest (Crucial for Line Charts)
+            const sortedData = data.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
+            // 3. Take only the last 20 items for the buffer
+            detailPage.realtimeBuffer = sortedData.slice(-20);
+
+            detailPage.renderRealtimeCharts();
+            document.getElementById('detail-content').classList.remove('hidden');
+            document.getElementById('detail-empty').classList.add('hidden');
+        } else {
+            // Start with empty buffer if no DB data exists
+            detailPage.realtimeBuffer = [];
+            document.getElementById('detail-content').classList.add('hidden');
+            document.getElementById('detail-empty').classList.remove('hidden');
+        }
+    },
+
+    handleRealtimeUpdate: (ghId, payload) => {
+        // Update big number cards regardless of mode
+        if (detailPage.currentId == ghId) {
+            detailPage.updateDetailValues(payload);
+        }
+
+        // Only update chart if we are in Realtime Mode
+        if (detailPage.isRealtimeMode && detailPage.currentId == ghId) {
+            const now = Date.now();
+            
+            // Optional: Throttle updates (e.g., every 2 seconds) to prevent UI lag if MQTT is spamming
+            // Remove this if check if you want every single packet instantly
+            if (now - detailPage.lastChartUpdate > 2000) {
+                
+                const newPoint = {
+                    ...payload,
+                    // Ensure we have a timestamp. MQTT payload might not have it, so use current time.
+                    created_at: payload.created_at || new Date().toISOString()
+                };
+
+                // 4. Push new data to the buffer
+                detailPage.realtimeBuffer.push(newPoint);
+
+                // 5. Maintain max 20 items in buffer (Remove oldest)
+                if (detailPage.realtimeBuffer.length > 20) {
+                    detailPage.realtimeBuffer.shift(); 
+                }
+
+                detailPage.lastChartUpdate = now;
+                detailPage.renderRealtimeCharts();
+
+                // Ensure UI is visible now that we have data
+                if (detailPage.realtimeBuffer.length > 0) {
+                    document.getElementById('detail-content').classList.remove('hidden');
+                    document.getElementById('detail-empty').classList.add('hidden');
+                }
+            }
+        }
+    },
+
+    renderRealtimeCharts: () => {
+        // Render whatever is currently in the buffer
+        detailPage.renderCharts(detailPage.realtimeBuffer);
     },
 
     loadHistory: async () => {
@@ -342,15 +434,10 @@ const detailPage = {
         const dateFromInput = document.getElementById('date-from');
         const dateToInput = document.getElementById('date-to');
 
-        // Logic Change: Strictly use Input values. 
-        // The Dropdown now simply auto-fills these inputs via the init() event listeners.
         let dateFrom = dateFromInput ? dateFromInput.value : null;
         let dateTo = dateToInput ? dateToInput.value : null;
 
-        // If 'to' is set, we want to include the whole day, so we might append time or handle it in backend.
-        // For simplicity, we send YYYY-MM-DD. If backend expects full timestamp:
         if (dateTo && dateTo.length === 10) {
-            // make sure we get until end of that day
             dateTo = dateTo + ' 23:59:59';
         }
 
@@ -456,20 +543,18 @@ const detailPage = {
         }
     },
 
-    handleRealtimeUpdate: (ghId, payload) => {
-        detailPage.updateDetailValues(payload);
-    },
-
     renderCharts: (data) => {
         if (!data || data.length === 0) return;
 
         const startTime = dayjs(data[0].created_at);
         const endTime = dayjs(data[data.length - 1].created_at);
         const durationInHours = endTime.diff(startTime, 'hour');
-
         const isDailyView = durationInHours > 24;
-        const axisFormat = isDailyView ? 'DD MMM' : 'HH:mm'; 
-        const tooltipFormat = isDailyView ? 'DD MMMM YYYY' : 'DD MMM HH:mm';
+
+        const isRealtime = detailPage.isRealtimeMode;
+
+        const axisFormat = isRealtime ? 'HH:mm:ss' : (isDailyView ? 'DD MMM' : 'HH:mm'); 
+        const tooltipFormat = isRealtime ? 'HH:mm:ss' : (isDailyView ? 'DD MMMM YYYY' : 'DD MMM HH:mm');
 
         const labels = data.map(d => dayjs(d.created_at).format(axisFormat));
 
@@ -486,17 +571,16 @@ const detailPage = {
                     datasets: [{
                         label, data: dataArr,
                         borderColor: color, backgroundColor: bg,
-                        fill: true, tension: 0.4, pointRadius: 2,
+                        fill: true, tension: 0.4, 
                         pointRadius: isDailyView ? 4 : 2,
-                        pointHoverRadius: isDailyView ? 6 : 4
+                        pointHoverRadius: 6
                     }]
                 },
                 options: {
                     responsive: true, maintainAspectRatio: false,
-                    interaction: {
-                        mode: 'index',
-                        intersect: false,
-                    },
+                    
+                    animation: isRealtime ? false : { duration: 1000 }, 
+                    interaction: { mode: 'index', intersect: false },
                     plugins: { 
                         legend: { display: false },
                         tooltip: {
@@ -514,7 +598,7 @@ const detailPage = {
                             display: true, 
                             grid: { display: false },
                             ticks: {
-                                maxTicksLimit: isDailyView ? 10 : 12,
+                                maxTicksLimit: 8,
                                 maxRotation: 0,
                                 autoSkip: true
                             }

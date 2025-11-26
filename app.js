@@ -1,5 +1,6 @@
 const express = require("express");
 const cors = require("cors");
+require("dotenv").config();
 const db = require("./db");
 
 const app = express();
@@ -64,6 +65,28 @@ app.post(
     db.query(sql, [greenhouse_id, dht_temp, dht_hum, turbidity, water_temp], (err, result) => {
       if (err) return res.status(500).json({ error: "DB Error" });
       res.json({ success: true, inserted_id: result.insertId });
+    });
+  })
+);
+
+app.get(
+  "/api/realtime/:greenhouse_id",
+  asyncHandler(async (req, res) => {
+    const greenhouse_id = req.params.greenhouse_id;
+    if (!isNumber(greenhouse_id)) return res.status(400).json({ error: "Invalid ID" });
+
+    // Get the latest 20 points to fill the buffer initially
+    const sql = `
+      SELECT * FROM realtime_data 
+      WHERE greenhouse_id = ? 
+      ORDER BY created_at DESC 
+      LIMIT 20
+    `;
+
+    db.query(sql, [greenhouse_id], (err, rows) => {
+      if (err) return res.status(500).json({ error: err.message });
+      // Return reversed (oldest first) so frontend charts plot correctly left-to-right
+      res.json(rows.reverse());
     });
   })
 );
@@ -235,6 +258,17 @@ app.get("/api/greenhouses", (req, res) => {
   db.query("SELECT * FROM greenhouses", (err, rows) => {
     if (err) return res.status(500).json({ error: err.message });
     res.json(rows);
+  });
+});
+
+app.get("/api/config", (req, res) => {
+  res.json({
+    mqtt: {
+      host: process.env.MQTT_HOST,
+      port: process.env.MQTT_PORT,
+      username: process.env.MQTT_USERNAME,
+      password: process.env.MQTT_PASSWORD,
+    },
   });
 });
 
